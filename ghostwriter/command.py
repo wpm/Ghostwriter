@@ -6,7 +6,9 @@ from typing import TextIO, Optional, Sequence
 import click
 from cytoolz import take
 
-from ghostwriter import Codec, characters_from_text_files, LanguageModel, __version__
+from ghostwriter import __version__
+from ghostwriter.model import LanguageModel
+from ghostwriter.text import characters_from_text_files, Codec
 
 
 class LanguageModelParamType(click.ParamType):

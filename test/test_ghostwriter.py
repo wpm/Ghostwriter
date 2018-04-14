@@ -3,7 +3,8 @@ import unittest
 
 from click.testing import CliRunner
 
-from ghostwriter import LanguageModel, characters_from_text_files
+from ghostwriter.model import LanguageModel
+from ghostwriter.text import characters_from_text_files
 from ghostwriter.command import ghostwriter
 
 
