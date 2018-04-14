@@ -1,3 +1,4 @@
+import logging
 from typing import TextIO, Optional
 
 import click
@@ -16,11 +17,13 @@ class LanguageModelParamType(click.ParamType):
 
 
 @click.group("ghostwriter")
-def ghostwriter():
+@click.option("--log", type=click.Choice(["debug", "info", "warning", "error", "critical"]), default="info",
+              help="Logging level (default info)")
+def ghostwriter(log: str):
     """
     Machine assisted writing
     """
-    pass
+    logging.basicConfig(format="%(asctime)s:%(levelname)s:%(message)s", level=getattr(logging, log.upper()))
 
 
 @ghostwriter.command("train", short_help="train model")
@@ -36,24 +39,18 @@ def train_command(data: TextIO, model_directory: str, context_size: int, hidden:
     """
     Train a language model.
     """
-    from keras.callbacks import ProgbarLogger, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-
     codec = Codec(characters(data, n))
     language_model = LanguageModel.create(hidden, context_size, dropout, codec)
     language_model.save(model_directory)
-    vectors, labels = language_model.labeled_data(characters(data, n))
-    language_model.model.fit(vectors, labels, epochs=epochs,
-                             callbacks=[ProgbarLogger(),
-                                        EarlyStopping(monitor="loss"),
-                                        ReduceLROnPlateau(monitor="loss"),
-                                        ModelCheckpoint(language_model.model_path(model_directory))])
+    history = language_model.train(characters(data, n), epochs, model_directory)
+    logging.info(f"{len(history.history['loss'])} iterations, final loss {history.history['loss'][-1]:0.5f}")
 
 
 @ghostwriter.command("perplexity", short_help="calculate perplexity")
-@click.argument("data", type=click.File())
 @click.argument("model", type=LanguageModelParamType())
+@click.argument("data", type=click.File())
 @click.option("--n", type=int, help="limit data to this many characters")
-def perplexity_command(data: TextIO, model: LanguageModel, n: Optional[int]):
+def perplexity_command(model: LanguageModel, data: TextIO, n: Optional[int]):
     """
     Calculate test set perplexity with a language model.
     """

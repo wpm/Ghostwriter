@@ -1,3 +1,4 @@
+import logging
 import os
 from pickle import load, dump
 from random import choices
@@ -54,6 +55,8 @@ class LanguageModel:
         from keras import Sequential
         from keras.layers import LSTM, Dropout, Dense
 
+        if codec.vocabulary_size == 0:
+            logging.warning("Creating a model with zero-sized codec.")
         model = Sequential()
         model.add(LSTM(hidden, input_shape=(context_size, 1)))
         model.add(Dropout(dropout))
@@ -79,6 +82,16 @@ class LanguageModel:
             self.model.save(self.model_path(directory))
         with open(self.codec_path(directory), "wb") as f:
             dump(self.codec, f)
+
+    def train(self, tokens: Iterable[str], epochs: int, model_directory: str):
+        from keras.callbacks import ProgbarLogger, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+
+        vectors, labels = self.labeled_data(tokens)
+        return self.model.fit(vectors, labels, epochs=epochs,
+                              callbacks=[ProgbarLogger(),
+                                         EarlyStopping(monitor="loss"),
+                                         ReduceLROnPlateau(monitor="loss"),
+                                         ModelCheckpoint(self.model_path(model_directory))])
 
     def labeled_data(self, tokens: Iterable[str]) -> Tuple[array, array]:
         def vectors_and_labels() -> Iterable[Tuple[array, array]]:
