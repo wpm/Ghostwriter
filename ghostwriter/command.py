@@ -5,7 +5,7 @@ from typing import TextIO, Optional
 
 import click
 
-from ghostwriter import Codec, characters, LanguageModel
+from ghostwriter import Codec, characters, LanguageModel, __version__
 
 
 class LanguageModelParamType(click.ParamType):
@@ -19,6 +19,7 @@ class LanguageModelParamType(click.ParamType):
 
 
 @click.group("ghostwriter")
+@click.version_option(version=__version__)
 @click.option("--log", type=click.Choice(["debug", "info", "warning", "error", "critical"]), default="info",
               help="Logging level (default info)")
 def ghostwriter(log: str):
@@ -49,7 +50,7 @@ def train_command(data: TextIO, model_directory: str, context_size: int, hidden:
             print(e, file=sys.stderr)
             sys.exit(-1)
     else:
-        language_model = LanguageModel.create(hidden, context_size, dropout, codec)
+        language_model = LanguageModel.create(hidden, context_size, dropout, codec, model_directory)
     history = language_model.train(characters(data, n), epochs, model_directory)
     logging.info(f"{len(history.history['loss'])} iterations, final loss {history.history['loss'][-1]:0.5f}")
 
