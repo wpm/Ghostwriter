@@ -51,7 +51,7 @@ class Codec:
 
 class LanguageModel:
     @classmethod
-    def create(cls, hidden: int, context_size: int, dropout: float, codec: Codec, model_directory: str) \
+    def create(cls, hidden: int, context_size: int, dropout: float, codec: Codec, model_directory: Optional[str]) \
             -> "LanguageModel":
         from keras import Sequential
         from keras.layers import LSTM, Dropout, Dense
@@ -64,7 +64,8 @@ class LanguageModel:
         model.add(Dense(codec.vocabulary_size, activation="softmax"))
         model.compile(loss="categorical_crossentropy", optimizer="adam")
         language_model = cls(model, codec)
-        language_model.save(model_directory)
+        if model_directory is not None:
+            language_model.save(model_directory)
         return language_model
 
     @classmethod

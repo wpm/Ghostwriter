@@ -31,27 +31,28 @@ def ghostwriter(log: str):
 
 @ghostwriter.command("train", short_help="train model")
 @click.argument("data", type=click.File())
-@click.argument("model_directory", type=click.Path())
+@click.option("--model", type=click.Path(), help="directory in which to save the model")
 @click.option("--context-size", default=10, help="context size (default 10)")
 @click.option("--hidden", default=256, help="LSTM hidden units (default 256)")
 @click.option("--dropout", default=0.2, help="dropout rate (default 0.2)")
 @click.option("--epochs", default=10, help="number of training epochs (default 10)")
 @click.option("--n", type=int, help="limit data to this many characters")
-def train_command(data: TextIO, model_directory: str, context_size: int, hidden: int, dropout: float, epochs: int,
-                  n: Optional[int]):
+def train_command(data: TextIO, model: Optional[str], context_size: int, hidden: int, dropout: float,
+                  epochs: int, n: Optional[int]):
     """
     Train a language model.
     """
     codec = Codec(characters(data, n))
-    if os.path.exists(model_directory):
+    if model is not None and os.path.exists(model):
         try:
-            language_model = LanguageModel.load(model_directory)
+            language_model = LanguageModel.load(model)
         except ValueError as e:
-            print(e, file=sys.stderr)
-            sys.exit(-1)
+            sys.exit(e)
     else:
-        language_model = LanguageModel.create(hidden, context_size, dropout, codec, model_directory)
-    history = language_model.train(characters(data, n), epochs, model_directory)
+        if model is None:
+            logging.warning("Not saving a model.")
+        language_model = LanguageModel.create(hidden, context_size, dropout, codec, model)
+    history = language_model.train(characters(data, n), epochs, model)
     logging.info(f"{len(history.history['loss'])} iterations, final loss {history.history['loss'][-1]:0.5f}")
 
 
