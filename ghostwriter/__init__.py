@@ -51,7 +51,8 @@ class Codec:
 
 class LanguageModel:
     @classmethod
-    def create(cls, hidden: int, context_size: int, dropout: float, codec: Codec) -> "LanguageModel":
+    def create(cls, hidden: int, context_size: int, dropout: float, codec: Codec, model_directory: str) \
+            -> "LanguageModel":
         from keras import Sequential
         from keras.layers import LSTM, Dropout, Dense
 
@@ -62,14 +63,19 @@ class LanguageModel:
         model.add(Dropout(dropout))
         model.add(Dense(codec.vocabulary_size, activation="softmax"))
         model.compile(loss="categorical_crossentropy", optimizer="adam")
-        return cls(model, codec)
+        language_model = cls(model, codec)
+        language_model.save(model_directory)
+        return language_model
 
     @classmethod
     def load(cls, directory) -> "LanguageModel":
         from keras.models import load_model
-        model = load_model(cls.model_path(directory))
-        with open(cls.codec_path(directory), "rb") as f:
-            codec = load(f)
+        try:
+            model = load_model(cls.model_path(directory))
+            with open(cls.codec_path(directory), "rb") as f:
+                codec = load(f)
+        except IOError:
+            raise ValueError(f"Cannot read language model from {directory}")
         return cls(model, codec)
 
     def __init__(self, model, codec: Codec):

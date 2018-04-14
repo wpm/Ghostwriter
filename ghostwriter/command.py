@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 from typing import TextIO, Optional
 
 import click
@@ -12,8 +14,8 @@ class LanguageModelParamType(click.ParamType):
     def convert(self, path: str, _, __) -> LanguageModel:
         try:
             return LanguageModel.load(path)
-        except IOError:
-            self.fail(f"{path} is not a language model")
+        except ValueError as e:
+            self.fail(e)
 
 
 @click.group("ghostwriter")
@@ -40,8 +42,14 @@ def train_command(data: TextIO, model_directory: str, context_size: int, hidden:
     Train a language model.
     """
     codec = Codec(characters(data, n))
-    language_model = LanguageModel.create(hidden, context_size, dropout, codec)
-    language_model.save(model_directory)
+    if os.path.exists(model_directory):
+        try:
+            language_model = LanguageModel.load(model_directory)
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            sys.exit(-1)
+    else:
+        language_model = LanguageModel.create(hidden, context_size, dropout, codec)
     history = language_model.train(characters(data, n), epochs, model_directory)
     logging.info(f"{len(history.history['loss'])} iterations, final loss {history.history['loss'][-1]:0.5f}")
 
