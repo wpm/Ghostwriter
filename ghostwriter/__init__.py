@@ -106,7 +106,7 @@ class LanguageModel:
             encoded_tokens = self.codec.encode(tokens)
             for encoding in sliding_window(self.context_size + 1, concat([padding, encoded_tokens, padding])):
                 vector = array(encoding[:-1])
-                label = zeros(self.codec.vocabulary_size)
+                label = zeros(self.vocabulary_size)
                 label[encoding[-1]] = 1
                 yield vector, label
 
@@ -123,17 +123,22 @@ class LanguageModel:
 
     def generate(self, seed: Sequence[str]) -> Iterable[str]:
         context = list(self.codec.encode(seed))
-        context = array([self.codec.PADDING_INDEX] * (self.context_size - len(context)))
+        context = ([self.codec.PADDING_INDEX] * (self.context_size - len(context)) + context)[-self.context_size:]
+        context = array(context).reshape(1, self.context_size, 1)
         while True:
-            predicted_distribution = self.model.predict(context)
-            sample = choices(range(self.codec.vocabulary_size), weights=predicted_distribution)
+            predicted_distribution = self.model.predict(context).reshape(self.vocabulary_size)
+            sample = choices(range(self.vocabulary_size), weights=predicted_distribution)[0]
             yield self.codec.decode_token(sample)
-            context = roll(context, -1)
+            context = roll(context, -1, axis=1)
             context[-1] = sample
 
     @property
     def context_size(self) -> int:
         return self.model.inputs[0].shape[1].value
+
+    @property
+    def vocabulary_size(self) -> int:
+        return self.codec.vocabulary_size
 
     @staticmethod
     def model_path(directory: str):
@@ -144,14 +149,35 @@ class LanguageModel:
         return os.path.join(directory, "codec.pk")
 
 
-def characters(data: TextIO, n: Optional[int] = None) -> Iterable[str]:
+def characters_from_text_files(text_files: Iterable[TextIO], n: Optional[int] = None) -> Iterable[str]:
+    """
+    Iterate over a list of text files, returning all the characters in them. Optionally only return the first n
+    characters in the set of files. Once each file is exhausted its pointer is reset to the head of the file, so this
+    function can be multiple times in a row and return the same results.
+
+    :param text_files: open text file handles
+    :param n: the number of characters to take, or take all if this is None
+    :return: the first n characters in the text files
+    """
+    tokens = concat(characters_from_text_file(text_file) for text_file in text_files)
+    if n is not None:
+        tokens = take(n, tokens)
+    return tokens
+
+
+def characters_from_text_file(text_file: TextIO) -> Iterable[str]:
+    """
+    Iterate over all the characters in a text file and then reset the pointer back to the start of the file.
+
+    :param text_file: open text file handle
+    :return: the characters in the text file
+    """
+
     def cs() -> Iterable[str]:
-        for line in data:
+        for line in text_file:
             for c in list(line):
                 yield c
 
     tokens = cs()
-    if n is not None:
-        tokens = take(n, tokens)
-    data.seek(0)
+    text_file.seek(0)
     return tokens
