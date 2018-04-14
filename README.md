@@ -1,2 +1,2 @@
 # Ghostwriter
-Writing by machine
+Machine-assisted writing.

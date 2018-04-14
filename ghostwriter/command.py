@@ -61,5 +61,5 @@ def perplexity_command(data: TextIO, model: LanguageModel, n: Optional[int]):
     print(f"{perplexity:0.4f}")
 
 
-if __name__ == "__main__":
-    ghostwriter()
+def main():
+    ghostwriter(auto_envvar_prefix="GHOSTWRITER")

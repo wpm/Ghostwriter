@@ -9,6 +9,10 @@ from cytoolz.itertoolz import sliding_window, concat
 from numpy import ma, roll
 from numpy.core.multiarray import array, zeros
 
+import version
+
+__version__ = version.__version__
+
 
 class Codec:
     PADDING_TOKEN = ""
