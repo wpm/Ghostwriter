@@ -15,6 +15,7 @@ class LanguageModel:
     """
     An LSTM language model.
     """
+
     @classmethod
     def create(cls, hidden: int, context_size: int, dropout: float, codec: Codec, model_directory: Optional[str]) \
             -> "LanguageModel":
@@ -95,7 +96,7 @@ class LanguageModel:
             sample = choices(range(self.vocabulary_size), weights=predicted_distribution)[0]
             yield self.codec.decode_token(sample)
             context = roll(context, -1, axis=1)
-            context[-1] = sample
+            context[-1][-1][0] = sample
 
     @property
     def context_size(self) -> int:
