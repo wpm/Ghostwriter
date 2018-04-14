@@ -56,15 +56,18 @@ class LanguageModel:
         with open(self.codec_path(directory), "wb") as f:
             dump(self.codec, f)
 
-    def train(self, tokens: Iterable[str], epochs: int, model_directory: str):
+    def train(self, tokens: Iterable[str], epochs: int, model_directory: Optional[str]):
         from keras.callbacks import ProgbarLogger, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
         vectors, labels = self.labeled_data(tokens)
-        return self.model.fit(vectors, labels, epochs=epochs,
-                              callbacks=[ProgbarLogger(),
-                                         EarlyStopping(monitor="loss"),
-                                         ReduceLROnPlateau(monitor="loss"),
-                                         ModelCheckpoint(self.model_path(model_directory))])
+        callbacks = [ProgbarLogger(), EarlyStopping(monitor="loss"), ReduceLROnPlateau(monitor="loss")]
+        if model_directory is not None:
+            callbacks.append(ModelCheckpoint(self.model_path(model_directory)))
+        history = self.model.fit(vectors, labels, epochs=epochs, callbacks=callbacks)
+        if model_directory is not None:
+            with open(self.history_path(model_directory), "wb") as f:
+                dump({"epoch": history.epoch, "history": history.history, "params": history.params}, f)
+        return history
 
     def labeled_data(self, tokens: Iterable[str]) -> Tuple[array, array]:
         def vectors_and_labels() -> Iterable[Tuple[array, array]]:
@@ -113,3 +116,7 @@ class LanguageModel:
     @staticmethod
     def codec_path(directory: str):
         return os.path.join(directory, "codec.pk")
+
+    @staticmethod
+    def history_path(directory: str):
+        return os.path.join(directory, "history.pk")
