@@ -2,13 +2,11 @@ import logging
 import os
 from pickle import load, dump
 from random import choices
-from typing import Optional, Iterable, Tuple, Sequence
+from typing import Optional, Iterable, Sequence
 
-from cytoolz.itertoolz import sliding_window, concat
-from numpy import ma, roll
-from numpy.core.multiarray import array, zeros
+from numpy import array, ma, roll
 
-from ghostwriter.text import Codec
+from ghostwriter.text import Codec, labeled_language_model_data
 
 
 class LanguageModel:
@@ -59,7 +57,7 @@ class LanguageModel:
     def train(self, tokens: Iterable[str], epochs: int, model_directory: Optional[str]):
         from keras.callbacks import ProgbarLogger, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
-        vectors, labels = self.labeled_data(tokens)
+        vectors, labels = labeled_language_model_data(self.codec, tokens, self.context_size)
         callbacks = [ProgbarLogger(), EarlyStopping(monitor="loss"), ReduceLROnPlateau(monitor="loss")]
         if model_directory is not None:
             callbacks.append(ModelCheckpoint(self.model_path(model_directory)))
@@ -69,23 +67,8 @@ class LanguageModel:
                 dump({"epoch": history.epoch, "history": history.history, "params": history.params}, f)
         return history
 
-    def labeled_data(self, tokens: Iterable[str]) -> Tuple[array, array]:
-        def vectors_and_labels() -> Iterable[Tuple[array, array]]:
-            padding = [self.codec.PADDING_INDEX] * self.context_size
-            encoded_tokens = self.codec.encode(tokens)
-            for encoding in sliding_window(self.context_size + 1, concat([padding, encoded_tokens, padding])):
-                vector = array(encoding[:-1])
-                label = zeros(self.vocabulary_size)
-                label[encoding[-1]] = 1
-                yield vector, label
-
-        vectors, labels = zip(*vectors_and_labels())
-        vectors = array(vectors)
-        samples = array(vectors).shape[0]
-        return array(vectors).reshape(samples, self.context_size, 1), array(labels)
-
     def perplexity(self, tokens: Iterable[str]) -> float:
-        vectors, labels = self.labeled_data(tokens)
+        vectors, labels = labeled_language_model_data(self.codec, tokens, self.context_size)
         predictions = self.model.predict(vectors)
         n = predictions.shape[0]
         return 2 ** (-ma.log2(predictions * labels).filled(0).sum() / n)
