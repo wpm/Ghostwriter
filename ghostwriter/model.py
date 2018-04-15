@@ -1,11 +1,14 @@
 import logging
 import os
+import sys
+from io import StringIO
 from pickle import load, dump
 from random import choices
 from typing import Optional, Iterable, Sequence
 
 from numpy import array, ma, roll
 
+from ghostwriter import __version__
 from ghostwriter.text import TokenCodec, labeled_language_model_data
 
 
@@ -15,8 +18,7 @@ class LanguageModel:
     """
 
     @classmethod
-    def create(cls, hidden: int, context_size: int, dropout: float, codec: TokenCodec, model_directory: Optional[str]) \
-            -> "LanguageModel":
+    def create(cls, hidden: int, context_size: int, dropout: float, codec: TokenCodec) -> "LanguageModel":
         from keras import Sequential
         from keras.layers import LSTM, Dropout, Dense
 
@@ -28,8 +30,6 @@ class LanguageModel:
         model.add(Dense(codec.vocabulary_size, activation="softmax"))
         model.compile(loss="categorical_crossentropy", optimizer="adam")
         language_model = cls(model, codec)
-        if model_directory is not None:
-            language_model.save(model_directory)
         return language_model
 
     @classmethod
@@ -46,6 +46,19 @@ class LanguageModel:
     def __init__(self, model, codec: TokenCodec):
         self.model = model
         self.codec = codec
+
+    def __repr__(self):
+        return f"Language Model: {self.hidden_nodes} hidden nodes, {self.codec}"
+
+    def __str__(self):
+        def model_topology():
+            old_stdout = sys.stdout
+            sys.stdout = s = StringIO()
+            self.model.summary()
+            sys.stdout = old_stdout
+            return s.getvalue()
+
+        return "%s\n\n%s\nVersion %s" % (repr(self), model_topology(), __version__)
 
     def save(self, directory: str):
         os.makedirs(directory)
@@ -91,6 +104,10 @@ class LanguageModel:
     @property
     def vocabulary_size(self) -> int:
         return self.codec.vocabulary_size
+
+    @property
+    def hidden_nodes(self) -> int:
+        return self.model.layers[0].output_shape[1]
 
     @staticmethod
     def model_path(directory: str):

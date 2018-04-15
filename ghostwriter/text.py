@@ -25,7 +25,7 @@ class TokenCodec:
         self.token_to_index = dict((token, index) for index, token in enumerate(self.index_to_token))
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}: vocabulary size {self.vocabulary_size}"
+        return f"Token Codec: vocabulary size {self.vocabulary_size}"
 
     def encode(self, tokens: Iterable[str]) -> Iterable[Optional[int]]:
         return (self.token_to_index.get(token, None) for token in tokens)
