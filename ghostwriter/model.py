@@ -1,15 +1,63 @@
+import json
 import logging
 import os
 import sys
 from io import StringIO
+from json import JSONDecodeError
 from pickle import load, dump
 from random import choices
-from typing import Optional, Iterable, Sequence
+from typing import Optional, Iterable, Sequence, Mapping, List
 
+from cytoolz.itertoolz import concat
 from numpy import array, ma, roll
 
 from ghostwriter import __version__
 from ghostwriter.text import TokenCodec, labeled_language_model_data
+
+
+class TrainingHistory:
+    @classmethod
+    def from_keras_history(cls, history) -> "TrainingHistory":
+        # Map to float so that these numbers can be serialized in JSON.
+        h = dict((k, [float(x) for x in history.history[k]]) for k in history.history)
+        return cls([history.epoch], [h], [history.params])
+
+    def __init__(self, epoch: List[List[int]] = (), history: List[Mapping[str, Sequence[float]]] = (),
+                 params: List[Mapping] = ()):
+        self.epoch = list(epoch)
+        self.history = list(history)
+        self.params = list(params)
+
+    def __repr__(self) -> str:
+        s = f"History: {self.iterations} iterations"
+        if self.final_loss is not None:
+            s += f", final loss {self.final_loss:0.4f}"
+        return s
+
+    def __add__(self, other: "TrainingHistory") -> "TrainingHistory":
+        return TrainingHistory(self.epoch + other.epoch, self.history + other.history, self.params + other.params)
+
+    @property
+    def iterations(self) -> int:
+        return len(list(concat(self.epoch)))
+
+    @property
+    def final_loss(self) -> Optional[float]:
+        try:
+            return self.history[-1]["loss"][-1]
+        except IndexError:
+            return None
+
+    def to_json(self, filename: str):
+        with open(filename, "w") as f:
+            json.dump({"epoch": self.epoch, "history": self.history, "params": self.params},
+                      f, indent=4, sort_keys=True)
+
+    @classmethod
+    def from_json(cls, filename: str) -> "TrainingHistory":
+        with open(filename) as f:
+            h = json.load(f)
+        return cls(h["epoch"], h["history"], h["params"])
 
 
 class LanguageModel:
@@ -32,20 +80,10 @@ class LanguageModel:
         language_model = cls(model, codec)
         return language_model
 
-    @classmethod
-    def load(cls, directory) -> "LanguageModel":
-        from keras.models import load_model
-        try:
-            model = load_model(cls.model_path(directory))
-            with open(cls.codec_path(directory), "rb") as f:
-                codec = load(f)
-        except IOError:
-            raise ValueError(f"Cannot read language model from {directory}")
-        return cls(model, codec)
-
-    def __init__(self, model, codec: TokenCodec):
+    def __init__(self, model, codec: TokenCodec, history: TrainingHistory = TrainingHistory()):
         self.model = model
         self.codec = codec
+        self.history = history
 
     def __repr__(self):
         return f"Language Model: {self.hidden_nodes} hidden nodes, {self.codec}"
@@ -60,25 +98,21 @@ class LanguageModel:
 
         return "%s\n\n%s\nVersion %s" % (repr(self), model_topology(), __version__)
 
-    def save(self, directory: str):
-        os.makedirs(directory)
-        if not os.path.exists(self.model_path(directory)):
-            self.model.save(self.model_path(directory))
-        with open(self.codec_path(directory), "wb") as f:
-            dump(self.codec, f)
-
-    def train(self, tokens: Iterable[str], epochs: int, model_directory: Optional[str]):
+    def train(self, tokens: Iterable[str], epochs: int, directory: Optional[str]):
         from keras.callbacks import ProgbarLogger, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
+        self.save(directory)
         vectors, labels = labeled_language_model_data(self.codec, tokens, self.context_size)
         callbacks = [ProgbarLogger(), EarlyStopping(monitor="loss"), ReduceLROnPlateau(monitor="loss")]
-        if model_directory is not None:
-            callbacks.append(ModelCheckpoint(self.model_path(model_directory)))
-        history = self.model.fit(vectors, labels, epochs=epochs, callbacks=callbacks)
-        if model_directory is not None:
-            with open(self.history_path(model_directory), "wb") as f:
-                dump({"epoch": history.epoch, "history": history.history, "params": history.params}, f)
-        return history
+        if directory is not None:
+            callbacks.append(ModelCheckpoint(self.model_path(directory)))
+        if self.history.iterations < epochs:
+            history = self.model.fit(vectors, labels,
+                                     epochs=epochs, initial_epoch=self.history.iterations,
+                                     callbacks=callbacks)
+            self.history += TrainingHistory.from_keras_history(history)
+            self.save(directory)
+        return self.history
 
     def perplexity(self, tokens: Iterable[str]) -> float:
         vectors, labels = labeled_language_model_data(self.codec, tokens, self.context_size)
@@ -96,6 +130,27 @@ class LanguageModel:
             yield self.codec.decode_token(sample)
             context = roll(context, -1, axis=1)
             context[-1][-1][0] = sample
+
+    def save(self, directory: str):
+        os.makedirs(directory, exist_ok=True)
+        if not os.path.exists(self.codec_path(directory)):
+            with open(self.codec_path(directory), "wb") as f:
+                dump(self.codec, f)
+        if not os.path.exists(self.model_path(directory)):
+            self.model.save(self.model_path(directory))
+        self.history.to_json(self.history_path(directory))
+
+    @classmethod
+    def load(cls, directory) -> "LanguageModel":
+        from keras.models import load_model
+        try:
+            model = load_model(cls.model_path(directory))
+            with open(cls.codec_path(directory), "rb") as f:
+                codec = load(f)
+            history = TrainingHistory.from_json(cls.history_path(directory))
+        except (IOError, JSONDecodeError):
+            raise ValueError(f"Cannot read language model from {directory}")
+        return cls(model, codec, history)
 
     @property
     def context_size(self) -> int:
@@ -119,4 +174,4 @@ class LanguageModel:
 
     @staticmethod
     def history_path(directory: str):
-        return os.path.join(directory, "history.pk")
+        return os.path.join(directory, "history.json")

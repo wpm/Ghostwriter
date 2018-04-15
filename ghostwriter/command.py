@@ -58,7 +58,7 @@ def train_command(data: Sequence[TextIO], model: Optional[str], context_size: in
         else:
             language_model.save(model)
     history = language_model.train(characters_from_text_files(data, n), epochs, model)
-    logging.info(f"{len(history.history['loss'])} iterations, final loss {history.history['loss'][-1]:0.5f}")
+    logging.info(f"{history.iterations} iterations, final loss {history.final_loss:0.5f}")
 
 
 @ghostwriter.command("perplexity", short_help="calculate perplexity")
