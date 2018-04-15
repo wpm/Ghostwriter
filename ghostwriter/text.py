@@ -1,34 +1,60 @@
-from typing import Iterable, Optional, TextIO, Tuple
+from typing import Iterable, Optional, TextIO, Tuple, List
 
 from collections.__init__ import defaultdict
-from cytoolz import take, sliding_window
-from cytoolz.itertoolz import concat
+from cytoolz.itertoolz import concat, sliding_window, take
 from numpy import array, zeros
 
 
 class TokenCodec:
     """
-    A codec is a isomorphism from a set of strings (called the vocabulary) to a set of integer indexes. The empty string
-    is called padding and is always mapped to index 0.
+    A token codec is a isomorphism from a set of strings (called the vocabulary) to a set of integer indexes. It always
+    has two tokens, a padding token with index 0 and an unknown token with the largest index in the codec. Decoding a
+    token not in vocabulary will return the unknown token, Both the padding and unknown tokens count towards the
+    vocabulary size.
     """
     PADDING = ""
     PADDING_INDEX = 0
+    UNKNOWN = None
 
-    def __init__(self, tokens: Iterable[str], maximum_vocabulary: Optional[int] = None):
+    @classmethod
+    def create_from_text(cls, tokens: Iterable[str], maximum_vocabulary: Optional[int] = None) -> "TokenCodec":
+        """
+        Create a codec from a sequence of tokens. The vocabulary will consist of all the tokens. Token indexes are
+        ordered by frequency then token order.
+
+        :param tokens: sequence of token from which to build the codec
+        :param maximum_vocabulary: optionally clip the vocabulary to this many of the most frequent tokens
+        :return: a codec
+        """
         token_count = defaultdict(int)
         for token in tokens:
             token_count[token] += 1
-        self.index_to_token = [self.PADDING] + \
-                              [token for _, token in
-                               sorted(((count, token) for token, count in token_count.items()),
-                                      reverse=True)[:maximum_vocabulary]]
+        index_to_token = [token for _, token in
+                          sorted(((count, token) for token, count in token_count.items()),
+                                 key=lambda t: (-t[0], t[1]))[:maximum_vocabulary]]
+        return cls(index_to_token)
+
+    def __init__(self, index_to_token: List[str]):
+        """
+        Create a token codec from a unique list of the strings it can encode.
+
+        :param index_to_token: list of tokens that can be encoded
+        """
+        if index_to_token[0] != self.PADDING:
+            index_to_token.insert(0, self.PADDING)
+        assert len(index_to_token) == len(set(index_to_token))
+        self.index_to_token = index_to_token
         self.token_to_index = dict((token, index) for index, token in enumerate(self.index_to_token))
 
     def __repr__(self) -> str:
         return f"Token Codec: vocabulary size {self.vocabulary_size}"
 
-    def encode(self, tokens: Iterable[str]) -> Iterable[Optional[int]]:
-        return (self.token_to_index.get(token, None) for token in tokens)
+    @property
+    def vocabulary_size(self) -> int:
+        return len(self.index_to_token) + 1
+
+    def encode(self, tokens: Iterable[str]) -> Iterable[int]:
+        return (self.token_to_index.get(token, self.vocabulary_size - 1) for token in tokens)
 
     def decode(self, indexes: Iterable[int]) -> Iterable[Optional[str]]:
         return (self.decode_token(index) for index in indexes)
@@ -37,11 +63,7 @@ class TokenCodec:
         try:
             return self.index_to_token[index]
         except IndexError:
-            return None
-
-    @property
-    def vocabulary_size(self) -> int:
-        return len(self.index_to_token)
+            return self.UNKNOWN
 
 
 def labeled_language_model_data(codec: TokenCodec, tokens: Iterable[str], context_size: int) -> Tuple[array, array]:
