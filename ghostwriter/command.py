@@ -85,6 +85,7 @@ def generate_command(model: LanguageModel, seed: str, characters: int):
     sys.stdout.write(seed)
     for character in take(characters, model.generate(list(seed))):
         sys.stdout.write(character)
+    print()
 
 
 def main():
