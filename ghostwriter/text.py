@@ -6,19 +6,19 @@ from cytoolz.itertoolz import concat
 from numpy import array, zeros
 
 
-class Codec:
+class TokenCodec:
     """
     A codec is a isomorphism from a set of strings (called the vocabulary) to a set of integer indexes. The empty string
-    is called a padding token and is always mapping to index 0.
+    is called padding and is always mapped to index 0.
     """
-    PADDING_TOKEN = ""
+    PADDING = ""
     PADDING_INDEX = 0
 
     def __init__(self, tokens: Iterable[str], maximum_vocabulary: Optional[int] = None):
         token_count = defaultdict(int)
         for token in tokens:
             token_count[token] += 1
-        self.index_to_token = [self.PADDING_TOKEN] + \
+        self.index_to_token = [self.PADDING] + \
                               [token for _, token in
                                sorted(((count, token) for token, count in token_count.items()),
                                       reverse=True)[:maximum_vocabulary]]
@@ -44,7 +44,7 @@ class Codec:
         return len(self.index_to_token)
 
 
-def labeled_language_model_data(codec: Codec, tokens: Iterable[str], context_size: int) -> Tuple[array, array]:
+def labeled_language_model_data(codec: TokenCodec, tokens: Iterable[str], context_size: int) -> Tuple[array, array]:
     """
     Transform a sequence of tokens into encoded data that can be used to train a language model.
 

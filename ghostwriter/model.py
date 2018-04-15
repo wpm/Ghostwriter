@@ -6,7 +6,7 @@ from typing import Optional, Iterable, Sequence
 
 from numpy import array, ma, roll
 
-from ghostwriter.text import Codec, labeled_language_model_data
+from ghostwriter.text import TokenCodec, labeled_language_model_data
 
 
 class LanguageModel:
@@ -15,7 +15,7 @@ class LanguageModel:
     """
 
     @classmethod
-    def create(cls, hidden: int, context_size: int, dropout: float, codec: Codec, model_directory: Optional[str]) \
+    def create(cls, hidden: int, context_size: int, dropout: float, codec: TokenCodec, model_directory: Optional[str]) \
             -> "LanguageModel":
         from keras import Sequential
         from keras.layers import LSTM, Dropout, Dense
@@ -43,7 +43,7 @@ class LanguageModel:
             raise ValueError(f"Cannot read language model from {directory}")
         return cls(model, codec)
 
-    def __init__(self, model, codec: Codec):
+    def __init__(self, model, codec: TokenCodec):
         self.model = model
         self.codec = codec
 

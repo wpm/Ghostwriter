@@ -8,7 +8,7 @@ from cytoolz import take
 
 from ghostwriter import __version__
 from ghostwriter.model import LanguageModel
-from ghostwriter.text import characters_from_text_files, Codec
+from ghostwriter.text import characters_from_text_files, TokenCodec
 
 
 class LanguageModelParamType(click.ParamType):
@@ -45,7 +45,7 @@ def train_command(data: Sequence[TextIO], model: Optional[str], context_size: in
     """
     Train a language model.
     """
-    codec = Codec(characters_from_text_files(data, n))
+    codec = TokenCodec(characters_from_text_files(data, n))
     if model is not None and os.path.exists(model):
         try:
             language_model = LanguageModel.load(model)
