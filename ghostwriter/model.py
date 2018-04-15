@@ -97,18 +97,20 @@ class LanguageModel:
 
         return "%s\n\n%s\nVersion %s" % (repr(self), model_topology(), __version__)
 
-    def train(self, tokens: Iterable[str], epochs: int, directory: Optional[str]):
+    def train(self, tokens: Iterable[str], epochs: int, directory: Optional[str], progress_bar: bool = True):
         from keras.callbacks import ProgbarLogger, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
         self.save(directory)
         vectors, labels = labeled_language_model_data(self.codec, tokens, self.context_size)
-        callbacks = [ProgbarLogger(), EarlyStopping(monitor="loss"), ReduceLROnPlateau(monitor="loss")]
+        callbacks = [EarlyStopping(monitor="loss"), ReduceLROnPlateau(monitor="loss")]
         if directory is not None:
             callbacks.append(ModelCheckpoint(self.model_path(directory)))
+        if progress_bar:
+            callbacks.append(ProgbarLogger())
         if self.history.iterations < epochs:
             history = self.model.fit(vectors, labels,
                                      epochs=epochs, initial_epoch=self.history.iterations,
-                                     callbacks=callbacks)
+                                     verbose=int(progress_bar), callbacks=callbacks)
             self.history += TrainingHistory.from_keras_history(history)
             self.save(directory)
         return self.history

@@ -40,8 +40,9 @@ def ghostwriter(log: str):
 @click.option("--dropout", default=0.2, help="dropout rate (default 0.2)")
 @click.option("--epochs", default=10, help="number of training epochs (default 10)")
 @click.option("--n", type=int, help="limit data to this many characters")
+@click.option("--progress-bar/--no-progress-bar", default=True, help="show progress bar (default True)")
 def train_command(data: Sequence[TextIO], model: Optional[str], context_size: int, hidden: int, dropout: float,
-                  epochs: int, n: Optional[int]):
+                  epochs: int, n: Optional[int], progress_bar: bool):
     """
     Train a language model.
     """
@@ -57,7 +58,7 @@ def train_command(data: Sequence[TextIO], model: Optional[str], context_size: in
             logging.warning("Not saving a model.")
         else:
             language_model.save(model)
-    history = language_model.train(characters_from_text_files(data, n), epochs, model)
+    history = language_model.train(characters_from_text_files(data, n), epochs, model, progress_bar)
     logging.info(f"{history.iterations} iterations, final loss {history.final_loss:0.5f}")
 
 
