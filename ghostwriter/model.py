@@ -133,6 +133,8 @@ class LanguageModel:
 
     def save(self, directory: str):
         os.makedirs(directory, exist_ok=True)
+        with open(self.description_path(directory), "w") as f:
+            f.write(str(self) + "\n")
         if not os.path.exists(self.codec_path(directory)):
             with open(self.codec_path(directory), "wb") as f:
                 dump(self.codec, f)
@@ -163,6 +165,10 @@ class LanguageModel:
     @property
     def hidden_nodes(self) -> int:
         return self.model.layers[0].output_shape[1]
+
+    @staticmethod
+    def description_path(directory: str):
+        return os.path.join(directory, "description.txt")
 
     @staticmethod
     def model_path(directory: str):
