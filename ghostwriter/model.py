@@ -77,8 +77,7 @@ class LanguageModel:
         model.add(Dropout(dropout))
         model.add(Dense(codec.vocabulary_size, activation="softmax"))
         model.compile(loss="categorical_crossentropy", optimizer="adam")
-        language_model = cls(model, codec)
-        return language_model
+        return cls(model, codec)
 
     def __init__(self, model, codec: TokenCodec, history: TrainingHistory = TrainingHistory()):
         self.model = model

@@ -19,5 +19,6 @@ setup(
     description="Machine-assisted writing",
     long_description=readme(),
     entry_points={"console_scripts": ["ghostwriter=ghostwriter.command:main"]},
+    python_requires=">=3.6",
     install_requires=["click", "cytoolz", "keras", "numpy"]
 )
