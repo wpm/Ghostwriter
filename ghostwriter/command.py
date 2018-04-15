@@ -83,7 +83,7 @@ def generate_command(model: LanguageModel, seed: str, characters: int):
     Generate text from a model.
     """
     sys.stdout.write(seed)
-    for character in take(characters, model.generate(list(seed))):
+    for character in take(characters, (c for c in model.generate(list(seed)) if c is not None)):
         sys.stdout.write(character)
     print()
 
