@@ -12,7 +12,7 @@ from cytoolz.itertoolz import concat
 from numpy import array, ma, roll
 
 from ghostwriter import __version__
-from ghostwriter.text import TokenCodec, labeled_language_model_data
+from ghostwriter.text import labeled_language_model_data, TokenCodec, Token
 
 
 class TrainingHistory:
@@ -121,14 +121,14 @@ class LanguageModel:
         n = predictions.shape[0]
         return 2 ** (-ma.log2(predictions * labels).filled(0).sum() / n)
 
-    def generate(self, seed: Sequence[str]) -> Iterable[str]:
+    def generate(self, seed: Sequence[str]) -> Iterable[Token]:
         context = list(self.codec.encode(seed))
-        context = ([self.codec.PADDING_INDEX] * (self.context_size - len(context)) + context)[-self.context_size:]
+        context = ([self.codec.pad_index] * (self.context_size - len(context)) + context)[-self.context_size:]
         context = array(context).reshape(1, self.context_size, 1)
         while True:
             predicted_distribution = self.model.predict(context).reshape(self.vocabulary_size)
             sample = choices(range(self.vocabulary_size), weights=predicted_distribution)[0]
-            yield self.codec.decode_token(sample)
+            yield self.codec.decode_index(sample)
             context = roll(context, -1, axis=1)
             context[-1][-1][0] = sample
 

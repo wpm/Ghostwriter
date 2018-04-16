@@ -46,7 +46,7 @@ def train_command(data: Sequence[TextIO], model: Optional[str], context_size: in
     """
     Train a language model.
     """
-    codec = TokenCodec.create_from_text(characters_from_text_files(data, n))
+    codec = TokenCodec.create_from_tokens(characters_from_text_files(data, n))
     if model is not None and os.path.exists(model):
         try:
             language_model = LanguageModel.load(model)
@@ -83,7 +83,7 @@ def generate_command(model: LanguageModel, seed: str, characters: int):
     Generate text from a model.
     """
     sys.stdout.write(seed)
-    for character in take(characters, (c for c in model.generate(list(seed)) if c is not None)):
+    for character in take(characters, (str(token) for token in model.generate(list(seed)) if not token.is_meta)):
         sys.stdout.write(character)
     print()
 
