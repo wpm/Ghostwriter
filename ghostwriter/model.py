@@ -12,7 +12,7 @@ from cytoolz.itertoolz import concat
 from numpy import array, ma, roll
 
 from ghostwriter import __version__
-from ghostwriter.text import labeled_language_model_data, TokenCodec, Token
+from ghostwriter.text import Token, Tokenizer
 
 
 class TrainingHistory:
@@ -66,26 +66,26 @@ class LanguageModel:
     """
 
     @classmethod
-    def create(cls, hidden: int, context_size: int, dropout: float, codec: TokenCodec) -> "LanguageModel":
+    def create(cls, tokenizer: Tokenizer, hidden: int, dropout: float) -> "LanguageModel":
         from keras import Sequential
         from keras.layers import LSTM, Dropout, Dense
 
-        if codec.vocabulary_size == 0:
-            logging.warning("Creating a model with zero-sized codec.")
+        if tokenizer.vocabulary_size == 0:
+            logging.warning("Creating a model using a codec with an empty vocabulary.")
         model = Sequential()
-        model.add(LSTM(hidden, input_shape=(context_size, 1)))
+        model.add(LSTM(hidden, input_shape=(tokenizer.context_size, 1)))
         model.add(Dropout(dropout))
-        model.add(Dense(codec.vocabulary_size, activation="softmax"))
+        model.add(Dense(tokenizer.vocabulary_size, activation="softmax"))
         model.compile(loss="categorical_crossentropy", optimizer="adam")
-        return cls(model, codec)
+        return cls(model, tokenizer)
 
-    def __init__(self, model, codec: TokenCodec, history: TrainingHistory = TrainingHistory()):
+    def __init__(self, model, tokenizer: Tokenizer, history: TrainingHistory = TrainingHistory()):
         self.model = model
-        self.codec = codec
+        self.tokenizer = tokenizer
         self.history = history
 
     def __repr__(self):
-        return f"Language Model: {self.hidden_nodes} hidden nodes, {self.codec}"
+        return f"Language Model: {self.hidden_nodes} hidden nodes, {self.tokenizer}"
 
     def __str__(self):
         def model_topology():
@@ -95,13 +95,13 @@ class LanguageModel:
             sys.stdout = old_stdout
             return s.getvalue()
 
-        return "%s\n\n%s\nVersion %s" % (repr(self), model_topology(), __version__)
+        return "%s\n\n%s\nGhostwriter version %s" % (repr(self), model_topology(), __version__)
 
-    def train(self, tokens: Iterable, epochs: int, directory: Optional[str], progress_bar: bool = True):
+    def train(self, documents: Iterable[str], epochs: int, directory: Optional[str], progress_bar: bool = True):
         from keras.callbacks import ProgbarLogger, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
         self.save(directory)
-        vectors, labels = labeled_language_model_data(self.codec, tokens, self.context_size)
+        vectors, labels = self.tokenizer.encoded_training_set_from_documents(documents)
         callbacks = [EarlyStopping(monitor="loss"), ReduceLROnPlateau(monitor="loss")]
         if directory is not None:
             callbacks.append(ModelCheckpoint(self.model_path(directory)))
@@ -115,20 +115,20 @@ class LanguageModel:
             self.save(directory)
         return self.history
 
-    def perplexity(self, tokens: Iterable) -> float:
-        vectors, labels = labeled_language_model_data(self.codec, tokens, self.context_size)
+    def perplexity(self, documents: Iterable[str]) -> float:
+        vectors, labels = self.tokenizer.encoded_training_set_from_documents(documents)
         predictions = self.model.predict(vectors)
         n = predictions.shape[0]
         return 2 ** (-ma.log2(predictions * labels).filled(0).sum() / n)
 
     def generate(self, seed: Sequence[str]) -> Iterable[Token]:
-        context = list(self.codec.encode(seed))
-        context = ([self.codec.pad_index] * (self.context_size - len(context)) + context)[-self.context_size:]
+        context = list(self.tokenizer.codec.encode(seed))
+        context = ([self.tokenizer.codec.pad_index] * (self.context_size - len(context)) + context)[-self.context_size:]
         context = array(context).reshape(1, self.context_size, 1)
         while True:
             predicted_distribution = self.model.predict(context).reshape(self.vocabulary_size)
             sample = choices(range(self.vocabulary_size), weights=predicted_distribution)[0]
-            yield self.codec.decode_index(sample)
+            yield self.tokenizer.codec.decode_index(sample)
             context = roll(context, -1, axis=1)
             context[-1][-1][0] = sample
 
@@ -136,9 +136,9 @@ class LanguageModel:
         os.makedirs(directory, exist_ok=True)
         with open(self.description_path(directory), "w") as f:
             f.write(str(self) + "\n")
-        if not os.path.exists(self.codec_path(directory)):
-            with open(self.codec_path(directory), "wb") as f:
-                dump(self.codec, f)
+        if not os.path.exists(self.tokenizer_path(directory)):
+            with open(self.tokenizer_path(directory), "wb") as f:
+                dump(self.tokenizer, f)
         if not os.path.exists(self.model_path(directory)):
             self.model.save(self.model_path(directory))
         self.history.to_json(self.history_path(directory))
@@ -148,12 +148,18 @@ class LanguageModel:
         from keras.models import load_model
         try:
             model = load_model(cls.model_path(directory))
-            with open(cls.codec_path(directory), "rb") as f:
-                codec = load(f)
+        except IOError:
+            raise ValueError(f"Cannot read the model from {cls.model_path(directory)}")
+        try:
+            with open(cls.tokenizer_path(directory), "rb") as f:
+                tokenizer = load(f)
+        except (IOError, OSError):
+            raise ValueError(f"Cannot read the tokenizer from {cls.tokenizer_path(directory)}")
+        try:
             history = TrainingHistory.from_json(cls.history_path(directory))
         except (IOError, JSONDecodeError):
-            raise ValueError(f"Cannot read language model from {directory}")
-        return cls(model, codec, history)
+            raise ValueError(f"Cannot read history from {cls.history_path(directory)}")
+        return cls(model, tokenizer, history)
 
     @property
     def context_size(self) -> int:
@@ -161,7 +167,7 @@ class LanguageModel:
 
     @property
     def vocabulary_size(self) -> int:
-        return self.codec.vocabulary_size
+        return self.tokenizer.vocabulary_size
 
     @property
     def hidden_nodes(self) -> int:
@@ -176,8 +182,8 @@ class LanguageModel:
         return os.path.join(directory, "model.h5")
 
     @staticmethod
-    def codec_path(directory: str):
-        return os.path.join(directory, "codec.pk")
+    def tokenizer_path(directory: str):
+        return os.path.join(directory, "tokenizer.pk")
 
     @staticmethod
     def history_path(directory: str):

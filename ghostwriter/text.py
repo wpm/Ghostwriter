@@ -1,11 +1,14 @@
+import pickle
+from copy import copy
 from operator import attrgetter
 from typing import Iterable, Optional, TextIO, Tuple, List, Set, Union, Any, Sequence
 
+import spacy
 from collections.__init__ import defaultdict
 from cytoolz.itertoolz import concat, sliding_window, take
 from numpy import array, zeros, concatenate
 from spacy.language import Language
-from spacy.tokens import Doc, Span
+from spacy.tokens import Doc
 from spacy.vocab import Vocab
 
 
@@ -172,10 +175,42 @@ class Tokenizer:
         self.codec = codec
         self.context_size = context_size
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}: vocabulary size {self.vocabulary_size}, context size {self.context_size}"
+
+    @property
+    def vocabulary_size(self) -> int:
+        return self.codec.vocabulary_size
+
+    def unencoded_from_documents(self, documents: Iterable[str]) -> Iterable[Tuple[Sequence[Token], Token]]:
+        raise NotImplemented
+
+    def encoded_training_set_from_documents(self, documents: Iterable[str]) -> Tuple[array, array]:
+
+        def vectors_and_labels() -> Iterable[Tuple[array, array]]:
+            for context, token in self.unencoded_from_documents(documents):
+                vector = array(list(self.codec.encode(context)))
+                label = zeros(self.vocabulary_size)
+                encoded_token = list(self.codec.encode([token]))[0]
+                label[encoded_token] = 1
+                yield vector, label
+
+        vectors, labels = zip(*vectors_and_labels())
+        vectors = array(vectors)
+        samples = array(vectors).shape[0]
+        return array(vectors).reshape(samples, self.context_size, 1), array(labels)
+
+    @classmethod
+    def deserialize(cls, f: TextIO) -> "Tokenizer":
+        return pickle.load(f)
+
+    def serialize(self, f: TextIO):
+        pickle.dump(self, f)
+
     def context_and_token(self, tokens: Iterable[Token]) -> Iterable[Tuple[Sequence[Token], Token]]:
         padding = [self.codec.PAD] * self.context_size
         for window in sliding_window(self.context_size + 1, concat([padding, tokens, padding])):
-            yield window[:-1], window[-1]
+            yield (window[:-1], window[-1])
 
 
 class CharacterTokenizer(Tokenizer):
@@ -185,53 +220,63 @@ class CharacterTokenizer(Tokenizer):
     """
 
     @classmethod
-    def create_from_text_files(cls, text_files: Iterable[TextIO], context_size: int,
-                               maximum_vocabulary: Optional[int] = None) -> "CharacterTokenizer":
-        codec = TokenCodec.create_from_tokens(cls.tokens_from_text_files(text_files), maximum_vocabulary)
+    def create_from_documents(cls, documents: Iterable[str], context_size: int,
+                              maximum_vocabulary: Optional[int] = None) -> "CharacterTokenizer":
+        codec = TokenCodec.create_from_tokens(cls.characters_from_documents(documents), maximum_vocabulary)
         return cls(codec, context_size)
 
-    def from_text(self, text: str) -> Iterable[Tuple[Sequence[Token], Token]]:
-        return self.context_and_token(Token(character) for character in text)
-
-    def from_text_files(self, text_files: Iterable[TextIO]) -> Iterable[Tuple[Sequence[Token], Token]]:
-        return self.context_and_token(self.tokens_from_text_files(text_files))
+    def unencoded_from_documents(self, documents: Iterable[str]) -> Iterable[Tuple[Sequence[Token], Token]]:
+        return self.context_and_token(self.characters_from_documents(documents))
 
     @staticmethod
-    def tokens_from_text_files(text_files: Iterable[TextIO]) -> Iterable[Token]:
-        for text_file in text_files:
-            for line in text_file:
-                for character in line:
-                    yield Token(character)
-            text_file.seek(0)
+    def characters_from_documents(documents: Iterable[str]) -> Iterable[Token]:
+        for document in documents:
+            for character in document:
+                yield Token(character)
 
 
 class SentenceTokenizer(Tokenizer):
     """
     Iterate over a list of text files, using spaCy to divide them into sentences. Append a special -EOS- token to the
     end of each sentence and generate contexts and following tokens from the sentences.
-
-    The spaCy Language object used to analyze the text is not serialized with this object and the same one given to the
-    constructor must be passed to the __call__ function.
     """
 
-    def __init__(self, nlp: Language, context_size: int, maximum_vocabulary: Optional[int] = None):
-        codec = GloVeCodec(nlp.vocab, maximum_vocabulary, {"-EOS-"})
+    def __init__(self, nlp: Language, nlp_name: str, context_size: int, maximum_vocabulary: Optional[int] = None):
+        self.nlp = nlp
+        self.nlp_name = nlp_name
+        self.context_size = context_size
+        self.maximum_vocabulary = maximum_vocabulary
+        codec = GloVeCodec(self.nlp.vocab, self.maximum_vocabulary, {"-EOS-"})
         super().__init__(codec, context_size)
-        self.nlp_info = nlp.meta
 
-    def from_text(self, text: str, nlp: Language) -> Iterable[Tuple[Sequence[Token], Token]]:
-        return self.from_sentences(nlp(text).sents)
-
-    def from_text_files(self, text_files: Iterable[TextIO], nlp: Language) -> Iterable[Tuple[Sequence[Token], Token]]:
-        for document in nlp.pipe(text_file.read() for text_file in text_files):
-            for context, token in self.from_sentences(document.sents):
-                yield context, token
-
-    def from_sentences(self, sentences: Iterable[Span]) -> Iterable[Tuple[Sequence[Token], Token]]:
+    def unencoded_from_documents(self, documents: Iterable[str]) -> Iterable[Tuple[Sequence[Token], Token]]:
         eos = Token.meta("-EOS-")
-        for sentence in sentences:
-            for context, token in self.context_and_token([Token(t.orth_) for t in sentence] + [eos]):
-                yield context, token
+        for document in self.nlp.pipe(documents):
+            for sentence in document.sents:
+                for context, token in self.context_and_token([Token(t.orth_) for t in sentence] + [eos]):
+                    yield context, token
+
+    def __getstate__(self):
+        d = copy(self.__dict__)
+        del d["nlp"]
+        return d
+
+    def __setstate__(self, d):
+        d["nlp"] = spacy.load(d["nlp_name"])
+        self.__dict__ = d
+
+
+def documents_from_text_files(text_files: Iterable[TextIO]) -> Iterable[str]:
+    """
+    Iterate over a list of text files, returning their contents. Once each file is exhausted its pointer is reset to the
+    head of the file, so this function can be multiple times in a row and return the same results.
+
+    :param text_files: open text file handles
+    :return: the context of each text file
+    """
+    for text_file in text_files:
+        yield text_file.read()
+        text_file.seek(0)
 
 
 def characters_from_text_files(text_files: Iterable[TextIO], n: Optional[int] = None) -> Iterable[str]:

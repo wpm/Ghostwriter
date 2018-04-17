@@ -81,6 +81,11 @@ class TestTokenizer(unittest.TestCase):
     def setUp(self):
         self.nlp = load_spacy_model()
 
+    def test_character_tokenizer_stringification(self):
+        tokenizer = CharacterTokenizer(TokenCodec.create_from_tokens("blue"), 3)
+        self.assertEqual("CharacterTokenizer: vocabulary size 6, context size 3", str(tokenizer))
+        self.assertEqual("CharacterTokenizer: vocabulary size 6, context size 3", repr(tokenizer))
+
     def test_character_tokenizer(self):
         codec = TokenCodec.create_from_tokens("blue")
         pad = codec.PAD
@@ -94,11 +99,16 @@ class TestTokenizer(unittest.TestCase):
             (("u", "e", pad), pad),
             (("e", pad, pad), pad)
         ]
-        actual = list(tokenizer.from_text("flue"))
+        actual = list(tokenizer.unencoded_from_documents(["flue"]))
         self.assertEqual(expected, actual)
 
+    def test_sentence_tokenizer_stringification(self):
+        codec = SentenceTokenizer(self.nlp, default_spacy_model, 3, 10000)
+        self.assertEqual("SentenceTokenizer: vocabulary size 10003, context size 3", str(codec))
+        self.assertEqual("SentenceTokenizer: vocabulary size 10003, context size 3", repr(codec))
+
     def test_sentence_tokenizer(self):
-        tokenizer = SentenceTokenizer(self.nlp, 3, 10000)
+        tokenizer = SentenceTokenizer(self.nlp, default_spacy_model, 3, 10000)
         pad = tokenizer.codec.PAD
         eos = Token.meta("-EOS-")
         expected = [
@@ -111,7 +121,7 @@ class TestTokenizer(unittest.TestCase):
             (("ran", eos, pad), pad),
             ((eos, pad, pad), pad),
         ]
-        actual = list(tokenizer.from_text("The blue fox ran", self.nlp))
+        actual = list(tokenizer.unencoded_from_documents(["The blue fox ran"]))
         self.assertEqual(expected, actual)
 
 
@@ -137,16 +147,17 @@ class TestReadData(unittest.TestCase):
 
 class TestModel(unittest.TestCase):
     def test_stringification(self):
-        model = LanguageModel.create(256, 10, 0.2,
-                                     TokenCodec.create_from_tokens(
-                                         list("The quick brown fox jumps over the lazy dog.")))
-        self.assertEqual("Language Model: 256 hidden nodes, TokenCodec: vocabulary size 31", repr(model))
+        tokenizer = CharacterTokenizer.create_from_documents(["The quick brown fox jumps over the lazy dog."], 10)
+        model = LanguageModel.create(tokenizer, 256, 0.2)
+        self.assertEqual("Language Model: 256 hidden nodes, CharacterTokenizer: vocabulary size 31, context size 10",
+                         repr(model))
 
 
 model_singleton = {}
+default_spacy_model = "en_core_web_lg"
 
 
-def load_spacy_model(name: str = "en_core_web_lg") -> Language:
+def load_spacy_model(name: str = default_spacy_model) -> Language:
     global model_singleton
     if name not in model_singleton:
         model_singleton[name] = spacy.load(name)

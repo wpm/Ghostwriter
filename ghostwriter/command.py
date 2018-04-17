@@ -8,7 +8,7 @@ from cytoolz import take
 
 from ghostwriter import __version__
 from ghostwriter.model import LanguageModel
-from ghostwriter.text import characters_from_text_files, TokenCodec
+from ghostwriter.text import CharacterTokenizer, documents_from_text_files
 
 
 class LanguageModelParamType(click.ParamType):
@@ -39,10 +39,9 @@ def ghostwriter(log: str):
 @click.option("--hidden", default=256, help="LSTM hidden units (default 256)")
 @click.option("--dropout", default=0.2, help="dropout rate (default 0.2)")
 @click.option("--epochs", default=10, help="number of training epochs (default 10)")
-@click.option("--n", type=int, help="limit data to this many characters")
 @click.option("--progress-bar/--no-progress-bar", default=True, help="show progress bar (default True)")
 def train_command(data: Sequence[TextIO], model: Optional[str], context_size: int, hidden: int, dropout: float,
-                  epochs: int, n: Optional[int], progress_bar: bool):
+                  epochs: int, progress_bar: bool):
     """
     Train a language model.
     """
@@ -52,25 +51,24 @@ def train_command(data: Sequence[TextIO], model: Optional[str], context_size: in
         except ValueError as e:
             sys.exit(e)
     else:
-        codec = TokenCodec.create_from_tokens(characters_from_text_files(data, n))
-        language_model = LanguageModel.create(hidden, context_size, dropout, codec)
+        tokenizer = CharacterTokenizer.create_from_documents(documents_from_text_files(data), context_size)
+        language_model = LanguageModel.create(tokenizer, hidden, dropout)
         if model is None:
             logging.warning("Not saving a model.")
         else:
             language_model.save(model)
-    history = language_model.train(characters_from_text_files(data, n), epochs, model, progress_bar)
+    history = language_model.train(documents_from_text_files(data), epochs, model, progress_bar)
     logging.info(f"{history.iterations} iterations, final loss {history.final_loss:0.5f}")
 
 
 @ghostwriter.command("perplexity", short_help="calculate perplexity")
 @click.argument("model", type=LanguageModelParamType())
 @click.argument("data", type=click.File(), nargs=-1)
-@click.option("--n", type=int, help="limit data to this many characters")
-def perplexity_command(model: LanguageModel, data: Sequence[TextIO], n: Optional[int]):
+def perplexity_command(model: LanguageModel, data: Sequence[TextIO]):
     """
     Calculate test set perplexity with a language model.
     """
-    perplexity = model.perplexity(characters_from_text_files(data, n))
+    perplexity = model.perplexity(documents_from_text_files(data))
     print(f"{perplexity:0.4f}")
 
 
