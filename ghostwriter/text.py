@@ -5,10 +5,9 @@ from typing import Iterable, Optional, TextIO, Tuple, List, Set, Union, Any, Seq
 
 import spacy
 from collections.__init__ import defaultdict
-from cytoolz.itertoolz import concat, sliding_window, take
-from numpy import array, zeros, concatenate
+from cytoolz.itertoolz import concat, sliding_window
+from numpy import array, zeros
 from spacy.language import Language
-from spacy.tokens import Doc
 from spacy.vocab import Vocab
 
 
@@ -131,45 +130,6 @@ class GloVeCodec(TokenCodec):
             self.embedding_matrix[index] = lexeme.vector
 
 
-def labeled_words_in_sentences_language_model_data(codec: GloVeCodec, document: Doc, context_size: int) \
-        -> Tuple[array, array]:
-    eos = Token.meta("-EOS-")
-    assert eos in codec
-    vectors = []
-    labels = []
-    for sentence in document.sents:
-        tokens = [Token(token.orth_) for token in sentence] + [eos]
-        sentence_vectors, sentence_labels = labeled_language_model_data(codec, tokens, context_size)
-        vectors.append(sentence_vectors)
-        labels.append(sentence_labels)
-    return concatenate(vectors), concatenate(labels)
-
-
-def labeled_language_model_data(codec: TokenCodec, tokens: Iterable, context_size: int) -> Tuple[array, array]:
-    """
-    Transform a sequence of tokens into encoded data that can be used to train a language model.
-
-    :param codec: a codec that encodes strings as integers
-    :param tokens: a sequence of tokens
-    :param context_size: number of consecutive tokens used to predict the following token
-    :return: vectors of context size with labels corresponding to the following tokens
-    """
-
-    def vectors_and_labels() -> Iterable[Tuple[array, array]]:
-        padding = [codec.pad_index] * context_size
-        encoded_tokens = codec.encode(tokens)
-        for encoding in sliding_window(context_size + 1, concat([padding, encoded_tokens, padding])):
-            vector = array(encoding[:-1])
-            label = zeros(codec.vocabulary_size)
-            label[encoding[-1]] = 1
-            yield vector, label
-
-    vectors, labels = zip(*vectors_and_labels())
-    vectors = array(vectors)
-    samples = array(vectors).shape[0]
-    return array(vectors).reshape(samples, context_size, 1), array(labels)
-
-
 class Tokenizer:
     def __init__(self, codec: TokenCodec, context_size: int):
         self.codec = codec
@@ -277,37 +237,3 @@ def documents_from_text_files(text_files: Iterable[TextIO]) -> Iterable[str]:
     for text_file in text_files:
         yield text_file.read()
         text_file.seek(0)
-
-
-def characters_from_text_files(text_files: Iterable[TextIO], n: Optional[int] = None) -> Iterable[str]:
-    """
-    Iterate over a list of text files, returning all the characters in them. Optionally only return the first n
-    characters in the set of files. Once each file is exhausted its pointer is reset to the head of the file, so this
-    function can be multiple times in a row and return the same results.
-
-    :param text_files: open text file handles
-    :param n: the number of characters to take, or take all if this is None
-    :return: the first n characters in the text files
-    """
-    characters = concat(characters_from_text_file(text_file) for text_file in text_files)
-    if n is not None:
-        characters = take(n, characters)
-    return characters
-
-
-def characters_from_text_file(text_file: TextIO) -> Iterable[str]:
-    """
-    Iterate over all the characters in a text file and then reset the pointer back to the start of the file.
-
-    :param text_file: open text file handle
-    :return: the characters in the text file
-    """
-
-    def cs() -> Iterable[str]:
-        for line in text_file:
-            for c in list(line):
-                yield c
-
-    characters = cs()
-    text_file.seek(0)
-    return characters

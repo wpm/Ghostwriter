@@ -9,8 +9,7 @@ from spacy.language import Language
 
 from ghostwriter.command import ghostwriter
 from ghostwriter.model import LanguageModel
-from ghostwriter.text import characters_from_text_files, GloVeCodec, TokenCodec, \
-    labeled_words_in_sentences_language_model_data, CharacterTokenizer, SentenceTokenizer, Token
+from ghostwriter.text import GloVeCodec, TokenCodec, CharacterTokenizer, SentenceTokenizer, Token
 
 KAFKA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kafka.txt")
 
@@ -130,19 +129,6 @@ class TestReadData(unittest.TestCase):
         self.nlp = load_spacy_model()
         with open(KAFKA) as f:
             self.kakfa = self.nlp(f.read())
-
-    def test_characters_from_text_file(self):
-        kafka = open(KAFKA)
-        s1 = list(characters_from_text_files([kafka]))
-        s2 = list(characters_from_text_files([kafka]))
-        self.assertEqual(s1, s2)
-        kafka.close()
-
-    def test_labeled_words_in_sentences_language_model_data(self):
-        codec = GloVeCodec(self.nlp.vocab, 10000, {"-EOS-"})
-        vectors, labels = labeled_words_in_sentences_language_model_data(codec, self.kakfa, 10)
-        self.assertEqual((152, 10, 1), vectors.shape)
-        self.assertEqual((152, 10003), labels.shape)
 
 
 class TestModel(unittest.TestCase):
