@@ -1,10 +1,11 @@
 from operator import attrgetter
-from typing import Iterable, Optional, TextIO, Tuple, List, Set, Union, Any
+from typing import Iterable, Optional, TextIO, Tuple, List, Set, Union, Any, Sequence
 
 from collections.__init__ import defaultdict
 from cytoolz.itertoolz import concat, sliding_window, take
 from numpy import array, zeros, concatenate
-from spacy.tokens import Doc
+from spacy.language import Language
+from spacy.tokens import Doc, Span
 from spacy.vocab import Vocab
 
 
@@ -166,6 +167,73 @@ def labeled_language_model_data(codec: TokenCodec, tokens: Iterable, context_siz
     return array(vectors).reshape(samples, context_size, 1), array(labels)
 
 
+class Tokenizer:
+    def __init__(self, codec: TokenCodec, context_size: int):
+        self.codec = codec
+        self.context_size = context_size
+
+    def context_and_token(self, tokens: Iterable[Token]) -> Iterable[Tuple[Sequence[Token], Token]]:
+        padding = [self.codec.PAD] * self.context_size
+        for window in sliding_window(self.context_size + 1, concat([padding, tokens, padding])):
+            yield window[:-1], window[-1]
+
+
+class CharacterTokenizer(Tokenizer):
+    """
+    Iterate over a list of text files, returning all the characters in them. Once each file is exhausted its pointer is
+    reset to the head of the file, so this tokenizer can be multiple times in a row and return the same results.
+    """
+
+    @classmethod
+    def create_from_text_files(cls, text_files: Iterable[TextIO], context_size: int,
+                               maximum_vocabulary: Optional[int] = None) -> "CharacterTokenizer":
+        codec = TokenCodec.create_from_tokens(cls.tokens_from_text_files(text_files), maximum_vocabulary)
+        return cls(codec, context_size)
+
+    def from_text(self, text: str) -> Iterable[Tuple[Sequence[Token], Token]]:
+        return self.context_and_token(Token(character) for character in text)
+
+    def from_text_files(self, text_files: Iterable[TextIO]) -> Iterable[Tuple[Sequence[Token], Token]]:
+        return self.context_and_token(self.tokens_from_text_files(text_files))
+
+    @staticmethod
+    def tokens_from_text_files(text_files: Iterable[TextIO]) -> Iterable[Token]:
+        for text_file in text_files:
+            for line in text_file:
+                for character in line:
+                    yield Token(character)
+            text_file.seek(0)
+
+
+class SentenceTokenizer(Tokenizer):
+    """
+    Iterate over a list of text files, using spaCy to divide them into sentences. Append a special -EOS- token to the
+    end of each sentence and generate contexts and following tokens from the sentences.
+
+    The spaCy Language object used to analyze the text is not serialized with this object and the same one given to the
+    constructor must be passed to the __call__ function.
+    """
+
+    def __init__(self, nlp: Language, context_size: int, maximum_vocabulary: Optional[int] = None):
+        codec = GloVeCodec(nlp.vocab, maximum_vocabulary, {"-EOS-"})
+        super().__init__(codec, context_size)
+        self.nlp_info = nlp.meta
+
+    def from_text(self, text: str, nlp: Language) -> Iterable[Tuple[Sequence[Token], Token]]:
+        return self.from_sentences(nlp(text).sents)
+
+    def from_text_files(self, text_files: Iterable[TextIO], nlp: Language) -> Iterable[Tuple[Sequence[Token], Token]]:
+        for document in nlp.pipe(text_file.read() for text_file in text_files):
+            for context, token in self.from_sentences(document.sents):
+                yield context, token
+
+    def from_sentences(self, sentences: Iterable[Span]) -> Iterable[Tuple[Sequence[Token], Token]]:
+        eos = Token.meta("-EOS-")
+        for sentence in sentences:
+            for context, token in self.context_and_token([Token(t.orth_) for t in sentence] + [eos]):
+                yield context, token
+
+
 def characters_from_text_files(text_files: Iterable[TextIO], n: Optional[int] = None) -> Iterable[str]:
     """
     Iterate over a list of text files, returning all the characters in them. Optionally only return the first n
@@ -176,10 +244,10 @@ def characters_from_text_files(text_files: Iterable[TextIO], n: Optional[int] = 
     :param n: the number of characters to take, or take all if this is None
     :return: the first n characters in the text files
     """
-    tokens = concat(characters_from_text_file(text_file) for text_file in text_files)
+    characters = concat(characters_from_text_file(text_file) for text_file in text_files)
     if n is not None:
-        tokens = take(n, tokens)
-    return tokens
+        characters = take(n, characters)
+    return characters
 
 
 def characters_from_text_file(text_file: TextIO) -> Iterable[str]:
@@ -195,6 +263,6 @@ def characters_from_text_file(text_file: TextIO) -> Iterable[str]:
             for c in list(line):
                 yield c
 
-    tokens = cs()
+    characters = cs()
     text_file.seek(0)
-    return tokens
+    return characters

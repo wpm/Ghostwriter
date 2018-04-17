@@ -97,7 +97,7 @@ class LanguageModel:
 
         return "%s\n\n%s\nVersion %s" % (repr(self), model_topology(), __version__)
 
-    def train(self, tokens: Iterable[str], epochs: int, directory: Optional[str], progress_bar: bool = True):
+    def train(self, tokens: Iterable, epochs: int, directory: Optional[str], progress_bar: bool = True):
         from keras.callbacks import ProgbarLogger, EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
         self.save(directory)
@@ -115,7 +115,7 @@ class LanguageModel:
             self.save(directory)
         return self.history
 
-    def perplexity(self, tokens: Iterable[str]) -> float:
+    def perplexity(self, tokens: Iterable) -> float:
         vectors, labels = labeled_language_model_data(self.codec, tokens, self.context_size)
         predictions = self.model.predict(vectors)
         n = predictions.shape[0]

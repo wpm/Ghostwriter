@@ -10,7 +10,7 @@ from spacy.language import Language
 from ghostwriter.command import ghostwriter
 from ghostwriter.model import LanguageModel
 from ghostwriter.text import characters_from_text_files, GloVeCodec, TokenCodec, \
-    labeled_words_in_sentences_language_model_data
+    labeled_words_in_sentences_language_model_data, CharacterTokenizer, SentenceTokenizer, Token
 
 KAFKA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kafka.txt")
 
@@ -75,6 +75,44 @@ class TestWordCodec(unittest.TestCase):
 
     def test_embedding_matrix(self):
         self.assertEqual((10002, 300), self.codec.embedding_matrix.shape)
+
+
+class TestTokenizer(unittest.TestCase):
+    def setUp(self):
+        self.nlp = load_spacy_model()
+
+    def test_character_tokenizer(self):
+        codec = TokenCodec.create_from_tokens("blue")
+        pad = codec.PAD
+        tokenizer = CharacterTokenizer(codec, 3)
+        expected = [
+            ((pad, pad, pad), "f"),
+            ((pad, pad, "f"), "l"),
+            ((pad, "f", "l"), "u"),
+            (("f", "l", "u"), "e"),
+            (("l", "u", "e"), pad),
+            (("u", "e", pad), pad),
+            (("e", pad, pad), pad)
+        ]
+        actual = list(tokenizer.from_text("flue"))
+        self.assertEqual(expected, actual)
+
+    def test_sentence_tokenizer(self):
+        tokenizer = SentenceTokenizer(self.nlp, 3, 10000)
+        pad = tokenizer.codec.PAD
+        eos = Token.meta("-EOS-")
+        expected = [
+            ((pad, pad, pad), "The"),
+            ((pad, pad, "The"), "blue"),
+            ((pad, "The", "blue"), "fox"),
+            (("The", "blue", "fox"), "ran"),
+            (("blue", "fox", "ran"), eos),
+            (("fox", "ran", eos), pad),
+            (("ran", eos, pad), pad),
+            ((eos, pad, pad), pad),
+        ]
+        actual = list(tokenizer.from_text("The blue fox ran", self.nlp))
+        self.assertEqual(expected, actual)
 
 
 class TestReadData(unittest.TestCase):
