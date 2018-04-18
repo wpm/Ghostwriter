@@ -1,3 +1,3 @@
-import version
+from ghostwriter import version
 
 __version__ = version.__version__

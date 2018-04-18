@@ -1,6 +1,6 @@
 from setuptools import setup
 
-from version import __version__
+from ghostwriter.version import __version__
 
 
 def readme():
